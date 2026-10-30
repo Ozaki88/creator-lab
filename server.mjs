@@ -9,6 +9,7 @@ import {dimensions,roles,VERSION} from './lib/schema.mjs';
 import {metrics} from './lib/data.mjs';
 import {checkProvider,download} from './lib/providers.mjs';
 import {demo,artwork} from './lib/demo.mjs';
+import {buildReference} from './lib/recreate.mjs';
 const ROOT=dirname(fileURLToPath(import.meta.url));
 const PORT=Number(process.env.PORT||5190),HOST=process.env.HOST||'127.0.0.1';
 const CSRF=randomBytes(32).toString('hex');
@@ -45,10 +46,12 @@ const server=http.createServer(async(req,res)=>{
   if(path==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache',Connection:'keep-alive'});res.write(': connected\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;}
   if(path==='/api/demo'){json(res,200,demo());return;}
   if(path==='/api/runs'&&req.method==='POST'){const data=await body(req);const job=await pipeline.create(data,data.rows);json(res,201,publicJob(job));return;}
-  const match=path.match(/^\/api\/runs\/([\w-]+)(?:\/(run|pause|export|metrics|attach))?$/);
+  const match=path.match(/^\/api\/runs\/([\w-]+)(?:\/(run|pause|export|metrics|attach|recreate))?$/);
   if(match){const [,id,action]=match;const job=pipeline.jobs.get(id);if(!job){json(res,404,{error:'Run not found'});return;}
    if(action==='run'&&req.method==='POST'){if(pipeline.active.size&&!pipeline.active.has(id))throw new Error('Pause the current run first');const settings=await body(req);if(settings.concurrency!==undefined){const n=Number(settings.concurrency);if(!Number.isInteger(n)||n<1||n>12)throw new Error('Concurrency must be 1 to 12');job.concurrency=n;}await pipeline.run(id);json(res,200,publicJob(job));return;}
    if(action==='pause'&&req.method==='POST'){await pipeline.pause(id);json(res,200,{paused:true});return;}
+   // Writes the reference folder when this computer has RECREATION_DIR; a hosted lab hands back the local command instead.
+   if(action==='recreate'&&req.method==='POST'){const {postId}=await body(req);const post=job.posts.find(p=>p.id===postId);if(!post){json(res,404,{error:'Reel not found'});return;}const dir=localEnv.RECREATION_DIR||process.env.RECREATION_DIR;if(!dir){json(res,200,{command:`npm run recreate -- ${post.url}`});return;}json(res,200,await buildReference(job,post,dir));return;}
    if(action==='attach'&&req.method==='POST'){await pipeline.attachScrape(id,(await body(req)).runId);json(res,200,{attached:true});return;}
    if(action==='metrics'){json(res,200,metrics(job.posts,{dimension:url.searchParams.get('dimension')||'mechanism',metric:url.searchParams.get('metric')||'views',minAgeDays:Number(url.searchParams.get('minAgeDays')??7)}));return;}
    if(action==='export'){res.setHeader('Content-Disposition',`attachment; filename="${job.creator}-${id}.json"`);json(res,200,publicJob(job));return;}
