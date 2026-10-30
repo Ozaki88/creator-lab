@@ -39,5 +39,5 @@ if(top){
 }
 for(const {job,post} of picks){
  const r=await buildReference(job,post,out);const s=referenceSummary(job,post);
- console.log(`${s.outlier??'?'}× · ${s.reach?.toLocaleString('en')} plays · ${r.frames} frames${r.video?'':' · VIDEO MISSING'}\n  ${r.dir}`);
+ console.log(`${s.outlier??'?'}× · ${s.reach?.toLocaleString('en')} plays · ${r.frames} frames · ${r.shots} camera shots${r.video?'':' · VIDEO MISSING'}\n  ${r.dir}`);
 }
