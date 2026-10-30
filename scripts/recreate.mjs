@@ -12,7 +12,7 @@ const root=fileURLToPath(new URL('../',import.meta.url));
 let env={};try{env=parseEnv(await readFile(join(root,'.env'),'utf8'));}catch{}
 const get=k=>env[k]||process.env[k]||'';
 const args=process.argv.slice(2);const flag=n=>{const i=args.indexOf(n);if(i<0)return '';const v=args[i+1];args.splice(i,2);return v;};
-const top=Number(flag('--top')||0),out=flag('--out')||get('RECREATION_DIR')||join(root,'recreations'),server=(flag('--server')||get('CREATOR_LAB_URL')).replace(/\/$/,'');
+const top=Number(flag('--top')||0),out=flag('--out')||get('RECREATION_DIR')||join(root,'recreations'),server=(flag('--server')||(get('CREATOR_LAB_PASSWORD')?get('CREATOR_LAB_URL'):'')).replace(/\/$/,'');
 const target=args[0];
 if(!target){console.log('Usage: npm run recreate -- <reel URL or shortcode>\n       npm run recreate -- --top 3 <instagram handle>');process.exit(1);}
 
