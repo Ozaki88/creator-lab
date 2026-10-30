@@ -15,3 +15,4 @@
 
 .inspector.no-matches>:not(.inspector-empty){display:none}.inspector-empty{font-size:12px;line-height:1.8;color:var(--muted);padding:20px 0}
 .preview-caption .recreate{display:block;font-size:10px;padding:3px 0;margin-top:8px;border-bottom:1px solid #a8b69a;border-radius:0;color:var(--dark);font-weight:600}
+.example-links .recreate-card{font-weight:600;color:var(--dark);border-bottom:1px solid #98a68b;border-radius:0;padding:3px 0}
