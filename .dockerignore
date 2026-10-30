@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+data/
+.git/
+.claude/
+node_modules/
+tests/
+docs/assets/

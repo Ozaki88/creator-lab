@@ -2,7 +2,7 @@ import http from 'node:http';
 import {readFile,writeFile,mkdir,stat} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,timingSafeEqual,createHash} from 'node:crypto';
 import {parseEnv} from 'node:util';
 import {Pipeline} from './lib/pipeline.mjs';
 import {dimensions,roles,VERSION} from './lib/schema.mjs';
@@ -10,8 +10,16 @@ import {metrics} from './lib/data.mjs';
 import {checkProvider,download} from './lib/providers.mjs';
 import {demo,artwork} from './lib/demo.mjs';
 const ROOT=dirname(fileURLToPath(import.meta.url));
-const PORT=Number(process.env.PORT||5190),HOST='127.0.0.1';
+const PORT=Number(process.env.PORT||5190),HOST=process.env.HOST||'127.0.0.1';
 const CSRF=randomBytes(32).toString('hex');
+// Hosted mode: PUBLIC_DOMAIN (or Railway's RAILWAY_PUBLIC_DOMAIN) is allowed alongside localhost, and LAB_PASSWORD gates every request.
+const PUBLIC_DOMAIN=process.env.PUBLIC_DOMAIN||process.env.RAILWAY_PUBLIC_DOMAIN||'';
+const allowedHosts=[`127.0.0.1:${PORT}`,`localhost:${PORT}`,...(PUBLIC_DOMAIN?[PUBLIC_DOMAIN]:[])];
+const allowedOrigins=[`http://127.0.0.1:${PORT}`,`http://localhost:${PORT}`,...(PUBLIC_DOMAIN?[`https://${PUBLIC_DOMAIN}`]:[])];
+const PASSWORD=process.env.LAB_PASSWORD||'';
+if(PUBLIC_DOMAIN&&!PASSWORD)throw new Error('Set LAB_PASSWORD before exposing Creator Lab on a public domain');
+const digest=s=>createHash('sha256').update(s).digest();
+const authorized=req=>{if(!PASSWORD)return true;const m=/^Basic (.+)$/.exec(req.headers.authorization||'');if(!m)return false;const pass=Buffer.from(m[1],'base64').toString().split(':').slice(1).join(':');return timingSafeEqual(digest(pass),digest(PASSWORD));};
 let localEnv={};try{localEnv=parseEnv(await readFile(join(ROOT,'.env'),'utf8'));}catch{}
 const transcriptionProvider=localEnv.TRANSCRIPTION_PROVIDER||process.env.TRANSCRIPTION_PROVIDER||'fireworks';
 const sessionKeys={};const verified={};
@@ -26,10 +34,11 @@ async function body(req){let size=0;const chunks=[];for await(const c of req){si
 const streams=setInterval(()=>{for(const res of clients)res.write(': heartbeat\n\n');},20000);streams.unref();
 const server=http.createServer(async(req,res)=>{
  try{
-  if(![`127.0.0.1:${PORT}`,`localhost:${PORT}`].includes(req.headers.host)){json(res,403,{error:'Local requests only'});return;}
+  if(!allowedHosts.includes(req.headers.host)){json(res,403,{error:'Local requests only'});return;}
+  if(!authorized(req)){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Creator Lab", charset="UTF-8"','Content-Type':'text/plain'});res.end('Password required');return;}
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
   const url=new URL(req.url,`http://${HOST}:${PORT}`);const path=url.pathname;
-  if(req.method!=='GET'&&(req.headers['x-lab-token']!==CSRF||req.headers.origin&&![`http://${HOST}:${PORT}`,`http://localhost:${PORT}`].includes(req.headers.origin))){json(res,403,{error:'Refresh the local app before changing data'});return;}
+  if(req.method!=='GET'&&(req.headers['x-lab-token']!==CSRF||req.headers.origin&&!allowedOrigins.includes(req.headers.origin))){json(res,403,{error:'Refresh the local app before changing data'});return;}
   if(path==='/api/bootstrap'){json(res,200,{token:CSRF,transcriptionProvider,dimensions:Object.fromEntries(Object.entries(dimensions).map(([k,v])=>[k,{title:v.title,criteria:v.question.criteria}])),roles,version:VERSION,connections:Object.fromEntries(Object.entries(keys()).map(([k,v])=>[k,{configured:Boolean(v),verified:verified[k]||false}])),runs:[...pipeline.jobs.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(summary)});return;}
   if(path==='/api/connections'&&req.method==='POST'){const data=await body(req);for(const name of ['apify','groq','fireworks','jev'])if(typeof data[name]==='string'&&data[name].trim()){sessionKeys[name]=data[name].trim();verified[name]=false;}json(res,200,{saved:true});return;}
   if(path==='/api/connections/check'&&req.method==='POST'){const results=Object.fromEntries(await Promise.all(Object.entries(keys()).map(async([name,key])=>[name,await checkProvider(name,key)])));for(const [name,r]of Object.entries(results))verified[name]=r.verified;json(res,200,results);return;}
